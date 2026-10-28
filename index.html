@@ -1,173 +1,331 @@
-<div id="ui">
-    <h3>Recorrido Interactivo 3D</h3>
-    <button id="btnRecorrido">Iniciar Recorrido Automático</button>
-    <div class="info">• Fondo y cielo procedural de bajo consumo</div>
-    <div class="info">• Vehículos y personas instanciadas (GPU)</div>
-</div>
-
-<!-- Importar Three.js mediante ESM -->
-<script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor Fotorrealista Revit - Recorridos y Zonas IA</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0f172a;
+            font-family: system-ui, -apple-system, sans-serif;
         }
-    }
-</script>
-
-<script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
-    // 1. ESCENA, CÁMARA Y RENDERIZADOR (Optimizado)
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87ceeb); // Cielo base
-    scene.fog = new THREE.FogExp2(0x87ceeb, 0.015);
-
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 15, 30);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limita pixeles en pantallas Retina para ahorrar recursos
-    renderer.shadowMap.enabled = false; // Desactivar sombras pesadas para máximo rendimiento
-    document.body.appendChild(renderer.domElement);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-
-    // 2. CIELO Y FONDO COHERENTE (Procedural de bajo costo)
-    const skyGeo = new THREE.SphereGeometry(500, 16, 16);
-    const skyMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.BackSide });
-    const sky = new THREE.Mesh(skyGeo, skyMat);
-    scene.add(sky);
-
-    // Luz ambiental y direccional simple (simula sol)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-    scene.add(ambientLight);
-    const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    sunLight.position.set(50, 100, 50);
-    scene.add(sunLight);
-
-    // 3. SUELO Y CALLES (Modelo base)
-    const floorGeo = new THREE.PlaneGeometry(300, 300);
-    const floorMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
-    const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.rotation.x = -Math.PI / 2;
-    scene.add(floor);
-
-    // 4. ENTORNOS, VEHÍCULOS Y PERSONAS (Instanciación masiva para gastar mínimos recursos)
-    // Vehículos (Cajas simplificadas con colores)
-    const carCount = 40;
-    const carGeo = new THREE.BoxGeometry(2, 1, 4);
-    const carMat = new THREE.MeshLambertMaterial({ color: 0xef4444 });
-    const carInstanced = new THREE.InstancedMesh(carGeo, carMat, carCount);
-    
-    const dummy = new THREE.Object3D();
-    const carData = [];
-    for (let i = 0; i < carCount; i++) {
-        const x = (Math.random() - 0.5) * 200;
-        const z = (Math.random() - 0.5) * 200;
-        carData.push({ x, z, speed: 0.2 + Math.random() * 0.4 });
-        dummy.position.set(x, 0.5, z);
-        dummy.updateMatrix();
-        carInstanced.setMatrixAt(i, dummy.matrix);
-    }
-    scene.add(carInstanced);
-
-    // Personas (Cilindros estilizados minimalistas)
-    const personCount = 60;
-    const personGeo = new THREE.CylinderGeometry(0.3, 0.3, 1.8, 6);
-    const personMat = new THREE.MeshLambertMaterial({ color: 0x3b82f6 });
-    const personInstanced = new THREE.InstancedMesh(personGeo, personMat, personCount);
-
-    const personData = [];
-    for (let i = 0; i < personCount; i++) {
-        const x = (Math.random() - 0.5) * 150;
-        const z = (Math.random() - 0.5) * 150;
-        personData.push({ x, z, angle: Math.random() * Math.PI * 2, speed: 0.03 + Math.random() * 0.03 });
-        dummy.position.set(x, 0.9, z);
-        dummy.updateMatrix();
-        personInstanced.setMatrixAt(i, dummy.matrix);
-    }
-    scene.add(personInstanced);
-
-    // 5. SISTEMA DE RECORRIDOS (Curva basada en puntos trazados por el usuario / predefined path)
-    // Puedes definir los puntos clave (waypoints) por donde quieres que pase la cámara
-    const pathPoints = [
-        new THREE.Vector3(0, 5, 40),
-        new THREE.Vector3(30, 5, 10),
-        new THREE.Vector3(20, 5, -30),
-        new THREE.Vector3(-30, 5, -20),
-        new THREE.Vector3(-20, 5, 20),
-        new THREE.Vector3(0, 5, 40)
-    ];
-    const curve = new THREE.CatmullRomCurve3(pathPoints, true);
-    
-    let recorridoActivo = false;
-    let progress = 0;
-
-    document.getElementById('btnRecorrido').addEventListener('click', () => {
-        recorridoActivo = !recorridoActivo;
-        document.getElementById('btnRecorrido').innerText = recorridoActivo ? "Detener Recorrido" : "Iniciar Recorrido Automático";
-    });
-
-    // 6. BUCLE DE RENDERIZADO OPTIMIZADO (Animación de vehículos, peatones y cámara)
-    const clock = new THREE.Clock();
-
-    function animate() {
-        requestAnimationFrame(animate);
-        const delta = clock.getDelta();
-
-        // Animar vehículos en bucle por las calles
-        for (let i = 0; i < carCount; i++) {
-            carData[i].z -= carData[i].speed;
-            if (carData[i].z < -100) carData[i].z = 100;
-            
-            dummy.position.set(carData[i].x, 0.5, carData[i].z);
-            dummy.updateMatrix();
-            carInstanced.setMatrixAt(i, dummy.matrix);
+        #ui {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(8px);
+            color: #fff;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 10;
+            max-width: 320px;
         }
-        carInstanced.instanceMatrix.needsUpdate = true;
+        h3 { margin: 0 0 10px 0; font-size: 16px; color: #38bdf8; }
+        .input-file {
+            display: block;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        input[type="file"] {
+            font-size: 12px;
+            color: #fff;
+            margin-top: 4px;
+        }
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            width: 100%;
+            margin-top: 6px;
+            transition: background 0.2s;
+        }
+        button:hover { background: #1d4ed8; }
+        .info { font-size: 12px; color: #94a3b8; margin-top: 6px; line-height: 1.4; }
+    </style>
+</head>
+<body>
 
-        // Animar personas con movimiento aleatorio sutil
-        for (let i = 0; i < personCount; i++) {
-            personData[i].x += Math.cos(personData[i].angle) * personData[i].speed;
-            personData[i].z += Math.sin(personData[i].angle) * personData[i].speed;
+    <div id="ui">
+        <h3>Visor BIM Fotorrealista</h3>
+        <div class="input-file">
+            <label>Cargar Modelo (GLB/GLTF de Revit):</label>
+            <input type="file" id="uploader" accept=".glb,.gltf">
+        </div>
+        <button id="btnModoArea">Delimitar Área de Tráfico</button>
+        <button id="btnRecorrido">Iniciar Recorrido Cinemático</button>
+        <div class="info">💡 **Instrucciones:** Carga tu archivo exportado de Revit. Haz clic en "Delimitar Área" para marcar los puntos del polígono en el suelo donde deseas que aparezcan vehículos y personas.</div>
+    </div>
+
+    <!-- Importar Three.js y complementos mediante importmap -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // 1. ESCENA, CÁMARA Y RENDERIZADOR (Gráficos Realistas / Calidad Media-Alta)
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0f172a);
+        scene.fog = new THREE.FogExp2(0x0f172a, 0.008);
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.set(20, 15, 30);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        
+        // Configuraciones de calidad fotorrealista
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // 2. ILUMINACIÓN REALISTA (Sol, Ambiente y Rebotes)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xfffbeb, 2.0);
+        sunLight.position.set(50, 80, 40);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 500;
+        const d = 60;
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.bias = -0.0005;
+        scene.add(sunLight);
+
+        // Suelo de referencia inicial
+        const gridHelper = new THREE.GridHelper(200, 50, 0x38bdf8, 0x334155);
+        gridHelper.position.y = -0.01;
+        scene.add(gridHelper);
+
+        const planeGeo = new THREE.PlaneGeometry(200, 200);
+        const planeMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+        const plane = new THREE.Mesh(planeGeo, planeMat);
+        plane.rotation.x = -Math.PI / 2;
+        plane.receiveShadow = true;
+        scene.add(plane);
+
+        // 3. CARGA DE MODELO GLB/GLTF (Desde Revit exportado)
+        let loadedModel = null;
+        document.getElementById('uploader').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const url = URL.createObjectURL(file);
+
+            const loader = new GLTFLoader();
+            loader.load(url, (gltf) => {
+                if (loadedModel) scene.remove(loadedModel);
+                loadedModel = gltf.scene;
+                
+                // Activar sombras en todos los elementos del modelo BIM
+                loadedModel.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        if (child.material) {
+                            child.material.envMapIntensity = 1.0;
+                        }
+                    }
+                });
+
+                scene.add(loadedModel);
+                
+                // Centrar cámara en el modelo
+                const box = new THREE.Box3().setFromObject(loadedModel);
+                const center = box.getCenter(new THREE.Vector3());
+                controls.target.copy(center);
+                camera.position.set(center.x + 30, center.y + 20, center.z + 30);
+                controls.update();
+            }, undefined, (error) => {
+                console.error("Error al cargar el modelo:", error);
+                alert("Asegúrate de exportar tu archivo de Revit a formato .glb o .gltf compatible.");
+            });
+        });
+
+        // 4. DELIMITACIÓN DE ÁREAS POR CLICS DEL USUARIO
+        let modoDelimitacion = false;
+        let puntosArea = [];
+        const areaMarkers = [];
+
+        document.getElementById('btnModoArea').addEventListener('click', () => {
+            modoDelimitacion = !modoDelimitacion;
+            document.getElementById('btnModoArea').style.background = modoDelimitacion ? "#16a34a" : "#2563eb";
+            document.getElementById('btnModoArea').innerText = modoDelimitacion ? "Terminar y Generar Tráfico en Área" : "Delimitar Área de Tráfico";
+            if (!modoDelimitacion && puntosArea.length >= 3) {
+                generarAgentesEnArea();
+            }
+        });
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        window.addEventListener('click', (event) => {
+            if (!modoDelimitacion) return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(scene.children, true);
+
+            if (intersects.length > 0) {
+                const punto = intersects[0].point;
+                puntosArea.value = punto;
+                puntosArea.push(punto);
+
+                // Crear esfera visual para marcar el vértice del área
+                const markerGeo = new THREE.SphereGeometry(0.4, 16, 16);
+                const markerMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+                const marker = new THREE.Mesh(markerGeo, markerMat);
+                marker.position.copy(punto);
+                scene.add(marker);
+                areaMarkers.push(marker);
+            }
+        });
+
+        // 5. AGENTES INTELIGENTES (Vehículos y Personas de calidad media)
+        let vehiculos = [];
+        let personas = [];
+
+        function generarAgentesEnArea() {
+            // Limpiar agentes anteriores si existen
+            vehiculos.forEach(v => scene.remove(v));
+            personas.forEach(p => scene.remove(p));
+            vehiculos = [];
+            personas = [];
+
+            // Encontrar centro aproximado del polígono delimitado
+            let centroX = 0, centroZ = 0;
+            puntosArea.forEach(p => { centroX += p.x; centroZ += p.z; });
+            centroX /= puntosArea.length;
+            centroZ /= puntosArea.length;
+
+            // Generar Vehículos realistas de diseño limpio
+            const carGeo = new THREE.BoxGeometry(1.8, 0.9, 4.2);
+            const carMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, metalness: 0.6, roughness: 0.3 });
             
-            if (Math.abs(personData[i].x) > 100 || Math.abs(personData[i].z) > 100) {
-                personData[i].angle += Math.PI; // Rebotar
+            for (let i = 0; i < 12; i++) {
+                const auto = new THREE.Mesh(carGeo, carMat);
+                auto.castShadow = true;
+                const angle = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 8;
+                auto.position.set(centroX + Math.cos(angle) * dist, 0.45, centroZ + Math.sin(angle) * dist);
+                scene.add(auto);
+                vehiculos.push({ mesh: auto, speed: 0.05 + Math.random() * 0.05, angle: angle });
             }
 
-            dummy.position.set(personData[i].x, 0.9, personData[i].z);
-            dummy.updateMatrix();
-            personInstanced.setMatrixAt(i, dummy.matrix);
-        }
-        personInstanced.instanceMatrix.needsUpdate = true;
+            // Generar Personas estilizadas
+            const personGeo = new THREE.CapsuleGeometry(0.25, 1.2, 4, 8);
+            const personMat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.5 });
 
-        // Control de recorrido automático guiado por la curva
-        if (recorridoActivo) {
-            progress += delta * 0.05; // Velocidad del recorrido
-            if (progress > 1) progress = 0;
-
-            const point = curve.getPointAt(progress);
-            const tangent = curve.getTangentAt(progress);
-
-            camera.position.copy(point);
-            camera.lookAt(point.clone().add(tangent));
-        } else {
-            controls.update();
+            for (let i = 0; i < 20; i++) {
+                const persona = new THREE.Mesh(personGeo, personMat);
+                persona.castShadow = true;
+                const angle = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 10;
+                persona.position.set(centroX + Math.cos(angle) * dist, 0.85, centroZ + Math.sin(angle) * dist);
+                scene.add(persona);
+                personas.push({ mesh: persona, speed: 0.02 + Math.random() * 0.02, angle: angle });
+            }
         }
 
-        renderer.render(scene, camera);
-    }
+        // 6. RECORRIDO AUTOMÁTICO DINÁMICO
+        let recorridoActivo = false;
+        let progresoRecorrido = 0;
+        let curvaRecorrido = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(0, 10, 30),
+            new THREE.Vector3(25, 10, 10),
+            new THREE.Vector3(10, 10, -25),
+            new THREE.Vector3(-25, 10, -10),
+            new THREE.Vector3(0, 10, 30)
+        ], true);
 
-    animate();
+        document.getElementById('btnRecorrido').addEventListener('click', () => {
+            recorridoActivo = !recorridoActivo;
+            document.getElementById('btnRecorrido').style.background = recorridoActivo ? "#16a34a" : "#2563eb";
+            document.getElementById('btnRecorrido').innerText = recorridoActivo ? "Detener Recorrido" : "Iniciar Recorrido Cinemático";
+        });
 
-    // Ajuste dinámico de ventana
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-</script>
+        // 7. BUCLE DE RENDERIZADO
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            // Animar vehículos dentro de las áreas designadas
+            vehiculos.forEach(v => {
+                v.mesh.position.x += Math.cos(v.angle) * v.speed;
+                v.mesh.position.z += Math.sin(v.angle) * v.speed;
+                // Pequeño rebote circular simulado
+                if (Math.hypot(v.mesh.position.x, v.mesh.position.z) > 45) {
+                    v.angle += Math.PI;
+                }
+            });
+
+            // Animar personas
+            personas.forEach(p => {
+                p.mesh.position.x += Math.cos(p.angle) * p.speed;
+                p.mesh.position.z += Math.sin(p.angle) * p.speed;
+                if (Math.random() < 0.02) p.angle += (Math.random() - 0.5) * 1.5;
+            });
+
+            // Recorrido de cámara cinemático
+            if (recorridoActivo) {
+                progresoRecorrido += delta * 0.03;
+                if (progresoRecorrido > 1) progresoRecorrido = 0;
+
+                const pos = curvaRecorrido.getPointAt(progresoRecorrido);
+                const tangente = curvaRecorrido.getTangentAt(progresoRecorrido);
+
+                camera.position.copy(pos);
+                camera.lookAt(pos.clone().add(tangent));
+            } else {
+                controls.update();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Ajuste de ventana responsivo
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
